@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>廚工補休時數紀錄表</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Inter 字體 -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #f8fafc; /* Light Gray Background */
+        }
+        /* 使主容器在非桌面端填滿大部分寬度，確保橫向表格顯示 */
+        .main-container {
+            max-width: 100%;
+        }
+        @media (min-width: 1024px) { /* Lg breakpoint */
+             /* 增加桌面端最大寬度，使其接近 A4 橫向比例 */
+            .main-container {
+                max-width: 1280px; /* Max-w-7xl is 1280px */
+            }
+        }
+
+        /* 確保 editable-note 在手機上點擊範圍足夠大 */
+        .editable-note, .editable-user-data {
+            min-height: 2rem;
+            line-height: 1.25rem;
+            padding: 0.25rem;
+            white-space: pre-wrap; /* 允許換行 */
+            word-break: break-all;
+        }
+
+        /* 讓用戶資料欄位看起來像輸入框 */
+        .editable-user-data {
+            display: inline-block;
+            min-width: 6rem;
+            padding: 0 4px;
+            border-bottom: 2px solid #9ca3af; /* 預設灰色底線 */
+            cursor: text;
+            transition: border-color 0.15s ease-in-out;
+        }
+
+        .editable-user-data:focus {
+            outline: none;
+            border-color: #3b82f6; /* Focus 藍色底線 */
+            background-color: #f0f9ff; /* Focus 淺藍色背景 */
+            border-radius: 4px;
+        }
+
+        /* 隱藏的月份行 */
+        .hidden-row {
+            display: none;
+        }
+
+
+        /* 隱藏列印時不需要的元素 */
+        @media print {
+            .print\:hidden {
+                display: none !important;
+            }
+            
+            /* 【核心修正】: 確保切換月份欄位在列印時隱藏 (針對 TH 和 TD) */
+            th.print-toggle-col, td.print-toggle-col {
+                display: none !important;
+            }
+
+            /* 確保被隱藏的月份行在列印時也被忽略 */
+            .hidden-row {
+                display: none !important;
+            }
+            /* 讓表格在列印時更緊湊 */
+            .table-container {
+                overflow: visible !important;
+            }
+            .min-w-full {
+                min-width: 100%;
+            }
+            /* 移除背景顏色以節省墨水 */
+            body, .bg-white {
+                background-color: transparent !important;
+            }
+            /* 讓列印時的背景顏色更輕微 */
+            .bg-blue-50 { background-color: #f0f8ff !important; }
+            .bg-blue-100 { background-color: #e0f2fe !important; }
+            .bg-red-100 { background-color: #fee2e2 !important; }
+            .bg-green-100 { background-color: #dcfce7 !important; }
+            
+            /* ==== 核心修正：極致縮小行距與字體以適應單頁 A4 橫向 ==== */
+            
+            /* 標題與元數據使用較小的字體 */
+            h1 { font-size: 14pt !important; }
+            .text-sm { font-size: 9pt !important; }
+            .text-base { font-size: 10pt !important; }
+            
+            /* 表格文字極度縮小 */
+            .text-xs, th, td { font-size: 7.5pt !important; line-height: 0.9 !important; } /* 行高進一步縮減 */
+            
+            /* 調整表格標題行的 padding: P-Y 減到 1px (原 3.5 = 14px) */
+            thead th { 
+                padding-top: 1px !important; 
+                padding-bottom: 1px !important; 
+            }
+            
+            /* 調整日/時數單元格的 padding: P-Y 減到 0px (最極限) */
+            #calendar-body td { 
+                padding-top: 0px !important; 
+                padding-bottom: 0px !important; 
+            }
+            
+            /* 但確保月份/總計單元格仍有一點點空間 */
+            #calendar-body td:nth-child(2), /* month/hour */
+            #calendar-body td:last-child { /* total */
+                padding-top: 1px !important;
+                padding-bottom: 1px !important;
+            }
+
+            /* 調整可編輯單元格的最小高度和行高 */
+            .editable-note { 
+                min-height: 0.6rem !important; /* 減至 0.6rem */
+                line-height: 0.7rem !important; /* 0.7rem */
+                padding: 0px 1px !important; /* 垂直填充設為 0 */
+            }
+
+            /* 確保 PDF 捕捉的區域是滿版 */
+            .main-container {
+                width: 100%;
+                margin: 0 !important;
+                padding: 10px !important; /* 增加小小的邊距防止內容被切除 */
+                box-shadow: none !important;
+                border-radius: 0 !important;
+            }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <!-- 主容器，用於 PDF 截圖。已移除 max-w-7xl 以便在橫向時更寬 -->
+    <div class="main-container mx-auto bg-white p-6 md:p-10 rounded-xl shadow-2xl">
+        <!-- 調整：減少垂直間距 mb-6 -> mb-4, pb-4 -> pb-2 -->
+        <header class="mb-4 border-b pb-2"> 
+            
+            <!-- NEW WRAPPER: 確保元數據和標題可以左右對齊 (Desktop) -->
+            <!-- flex-col-reverse: 在手機上標題優先顯示，元數據在下方 -->
+            <!-- md:flex-row: 在桌面端左右對齊 -->
+            <div class="flex flex-col-reverse md:flex-row md:justify-between md:items-start px-2 mb-2">
+                
+                <!-- LEFT BLOCK: User Metadata (職別、姓名、特休計算) -->
+                <!-- 調整 space-y-2 -> space-y-1, 減少垂直間距 -->
+                <div class="flex flex-col text-sm md:text-base font-semibold text-gray-700 space-y-1 mt-2 md:mt-0">
+                    
+                    <!-- 職別與姓名 -->
+                    <div class="flex flex-wrap gap-x-4">
+                        <!-- 職別 -->
+                        <div class="flex items-center">
+                            職別：
+                            <span id="job-title" 
+                                  contenteditable="true" 
+                                  onfocus="window.clearDefaultText(this, 'jobTitle')" 
+                                  onblur="window.handleUserDataBlur(this, 'jobTitle')" 
+                                  class="editable-user-data hover:border-blue-500 rounded text-gray-400 italic">
+                            </span>
+                        </div>
+                        <!-- 姓名 -->
+                        <div class="flex items-center">
+                            姓名：
+                            <span id="user-name" 
+                                  contenteditable="true" 
+                                  onfocus="window.clearDefaultText(this, 'userName')" 
+                                  onblur="window.handleUserDataBlur(this, 'userName')" 
+                                  class="editable-user-data hover:border-blue-500 rounded text-gray-400 italic">
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <!-- 特休計算欄位 -->
+                    <div class="text-left flex items-center">
+                        <div class="whitespace-nowrap">
+                            (特休：
+                            <span id="annual-leave-days" 
+                                  contenteditable="true" 
+                                  onblur="window.handleAnnualLeaveBlur(this.textContent)" 
+                                  class="inline-block px-1 border-b border-gray-400 cursor-text hover:border-blue-500 rounded text-center min-w-[3rem] font-bold">
+                            </span>
+                            <!-- 修正 2: 使用 Unicode 乘號 (×) -->
+                            天 × 8 = 
+                            <span id="annual-leave-hours" class="font-extrabold text-indigo-600 inline-block min-w-[3rem] text-left">0.0</span>
+                            小時)
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RIGHT BLOCK: Main Title -->
+                <div class="mb-2 md:mb-0 md:text-right">
+                    <h1 class="text-2xl md:text-3xl font-extrabold text-gray-800">
+                        <span id="printable-year-display"></span> 廚工補休時數紀錄表
+                    </h1>
+                </div>
+            </div>
+            
+            <!-- 2. Control Panel (控制按鈕與狀態, 隱藏於 PDF) -->
+            <div class="flex flex-col md:flex-row md:justify-between md:items-center mt-4 space-y-3 md:space-y-0 print:hidden" id="control-panel">
+                <div class="flex items-center space-x-4">
+                    <label for="year-selector" class="text-lg font-medium text-gray-600">選擇年份:</label>
+                    <select id="year-selector" class="p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150"></select>
+                    <!-- 下載 PDF 按鈕 (桌機版) -->
+                    <button onclick="window.downloadPDF()" class="hidden md:flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline mr-2" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                        下載 PDF
+                    </button>
+                </div>
+                <div class="text-sm text-gray-500 italic flex flex-col justify-end items-end space-y-1">
+                    <!-- 用戶 ID 顯示 (強制要求) -->
+                    <div class="text-xs text-gray-400">
+                        用戶 ID: <span id="user-id-display" class="font-mono text-gray-500 break-all"></span>
+                    </div>
+                </div>
+            </div>
+            <!-- 下載 PDF 按鈕 (手機版) -->
+            <button onclick="window.downloadPDF()" class="mt-4 w-full md:hidden flex items-center justify-center px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 print:hidden">
+                下載 PDF
+            </button>
+            <div id="status-message" class="mt-3 text-sm font-medium text-green-600">載入中...</div>
+        </header>
+
+        <!-- 記錄表主體 - 響應式滾動 -->
+        <div class="table-container overflow-x-auto rounded-lg border border-gray-200 shadow-lg">
+            <table class="min-w-full divide-y divide-gray-300">
+                <thead class="bg-gray-100 sticky top-0 z-10">
+                    <tr>
+                        <!-- 新增：隱藏/顯示按鈕欄位 (使用 print-toggle-col 確保隱藏) -->
+                        <th scope="col" class="print-toggle-col px-1 py-1 text-center text-xs font-semibold text-gray-900 border-r border-gray-300 w-8">
+                            隱藏
+                        </th>
+                        <!-- 調整為 w-20 減少寬度 (原 w-24) -->
+                        <th scope="col" class="py-1 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 border-r border-gray-300 w-20">
+                            月份/小時
+                        </th>
+                        <!-- 日期欄位 1 到 31 -->
+                        <script>
+                            // 修正：表頭第一行的 padding 也調整為 p-1 (py-1)
+                            for (let i = 1; i <= 31; i++) {
+                                // 調整為更小的寬度以適應橫向單頁 (原 w-8 md:w-10)
+                                document.write(`<th scope="col" class="px-2 py-1 text-center text-xs font-semibold text-gray-900 border-r border-gray-300 w-7 md:w-9">${i}</th>`);
+                            }
+                        </script>
+                        <!-- 調整為 w-16 減少寬度 (原 w-24) -->
+                        <th scope="col" class="px-3 py-1 text-right text-sm font-semibold text-gray-900 w-16">
+                            小時小計
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="calendar-body" class="divide-y divide-gray-200 bg-white">
+                    <!-- 月份行將由 JavaScript 動態生成 -->
+                </tbody>
+            </table>
+        </div>
+
+        <footer class="mt-8 text-sm text-gray-500 border-t pt-4 print:hidden">
+            <p>提醒：請在表格中輸入小時數 (支援小數點)。週末（週六: 藍色, 週日: 紅色）已自動標註背景，並將假期名稱以淡化文字顯示。資料會自動儲存。</p>
+            <p>資料路徑：/artifacts/{AppID}/users/{UserID}/meta/userProfile & /artifacts/{AppID}/users/{UserID}/annotations/Year-YYYY</p>
+        </footer>
+    </div>
+
+    <!-- 引入 PDF 產生所需函式庫 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <!-- Firebase 引入 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 設定 Firebase 變數
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // 設置日誌級別為 Debug
+        setLogLevel('Debug');
+
+        // 初始化 Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // UI 元素
+        const yearSelector = document.getElementById('year-selector');
+        const calendarBody = document.getElementById('calendar-body');
+        const printableYearDisplay = document.getElementById('printable-year-display'); // For printable title
+        const statusMessage = document.getElementById('status-message');
+        const jobTitleSpan = document.getElementById('job-title');
+        const userNameSpan = document.getElementById('user-name');
+        const annualLeaveDaysSpan = document.getElementById('annual-leave-days');
+        const annualLeaveHoursSpan = document.getElementById('annual-leave-hours');
+        const userIdDisplay = document.getElementById('user-id-display');
+
+        // 狀態變數
+        let currentYear = new Date().getFullYear();
+        let userId = null;
+        let userData = { 
+            jobTitle: '點此編輯職別', // 更新預設提示
+            userName: '點此編輯姓名', // 更新預設提示
+            annualLeaveDays: 0 
+        }; 
+        let annotations = {}; // { 'M-D': 'hours_string' }
+        
+        // 新增：月份隱藏狀態 {1: 'visible', 2: 'hidden', ...}
+        let monthVisibility = {};
+
+        // 常數：預設提示文字
+        const DEFAULT_JOB_TITLE = '點此編輯職別';
+        const DEFAULT_USER_NAME = '點此編輯姓名';
+        
+        // 2026 年（民國 115 年）人事行政總處法定假日、彈性放假及補假日期
+        // 鍵值格式為 "月-日"
+        const holidays2026 = {
+            // 1月
+            "1-1": "元旦",
+
+            // 2月 (春節連假: 2/14 ~ 2/22, 共 9 日)
+            "2-16": "除夕",
+            "2-17": "春節一",
+            "2-18": "春節二",
+            "2-19": "春節三",
+            "2-20": "春節補假",
+            "2-27": "和平補假", // 和平紀念日(2/28)逢週六補假
+
+            // 4月 (清明連假: 4/3 ~ 4/6, 共 4 日)
+            "4-3": "兒童補假",
+            "4-4": "兒童節",
+            "4-5": "清明節",
+            "4-6": "清明補假",
+
+            // 5月
+            "5-1": "勞動節",
+            
+            // 6月 (端午節連假: 6/19 ~ 6/21, 共 3 日)
+            "6-19": "端午節", 
+
+            // 9月 (中秋節及教師節連假: 9/25 ~ 9/28, 共 4 日)
+            "9-25": "中秋節",
+            "9-28": "教師節",
+            
+            // 10月 (國慶日連假: 10/9 ~ 10/11, 共 3 日)
+            "10-9": "國慶補假",
+            "10-10": "國慶日",
+            
+            // 10月 (光復節連假: 10/24 ~ 10/26, 共 3 日)
+            "10-25": "光復節",
+            "10-26": "光復補假",
+            
+            // 12月 (行憲紀念日連假: 12/25 ~ 12/27, 共 3 日)
+            "12-25": "行憲節",
+        };
+
+
+        // Firestore 引用路徑
+        const getYearDocRef = (year) => {
+            if (!userId) return null;
+            // 路徑結構：/artifacts/{appId}/users/{userId}/annotations/Year-{year}
+            return doc(db, 'artifacts', appId, 'users', userId, 'annotations', `Year-${year}`);
+        };
+
+        const getUserDataDocRef = () => {
+             if (!userId) return null;
+            // 路徑結構：/artifacts/{appId}/users/{userId}/meta/userProfile
+            return doc(db, 'artifacts', appId, 'users', userId, 'meta', 'userProfile');
+        };
+
+        /**
+         * 顯示狀態訊息
+         * @param {string} message - 要顯示的訊息
+         * @param {string} type - 訊息類型: 'loading', 'success', 'error'
+         */
+        const showStatus = (message, type = 'loading') => {
+            statusMessage.textContent = message;
+            statusMessage.className = 'mt-3 text-sm font-medium';
+            if (type === 'success') {
+                statusMessage.classList.add('text-green-600');
+            } else if (type === 'error') {
+                statusMessage.classList.add('text-red-600');
+            } else {
+                statusMessage.classList.add('text-gray-500');
+            }
+        };
+
+        // --- 月份隱藏/顯示功能 (使用 localStorage 進行非關鍵資料的暫存) ---
+
+        const loadMonthVisibility = () => {
+            try {
+                const stored = localStorage.getItem('monthVisibility');
+                monthVisibility = stored ? JSON.parse(stored) : {};
+            } catch (e) {
+                console.warn("Could not load month visibility from localStorage:", e);
+                monthVisibility = {};
+            }
+        }
+
+        const saveMonthVisibility = () => {
+            try {
+                localStorage.setItem('monthVisibility', JSON.stringify(monthVisibility));
+            } catch (e) {
+                console.warn("Could not save month visibility to localStorage:", e);
+            }
+        }
+
+        /**
+         * 切換月份行的顯示/隱藏狀態
+         * @param {number} month - 月份 (1-12)
+         */
+        window.toggleMonthVisibility = function(month) {
+            const row = document.getElementById(`month-row-${month}`);
+            if (!row) return;
+
+            const isHidden = row.classList.contains('hidden-row');
+            
+            if (isHidden) {
+                row.classList.remove('hidden-row');
+                monthVisibility[month] = 'visible';
+            } else {
+                row.classList.add('hidden-row');
+                monthVisibility[month] = 'hidden';
+            }
+            
+            // 儲存狀態並重新繪製以更新按鈕圖標
+            saveMonthVisibility();
+            renderCalendar(currentYear); 
+        };
+        // --- 登入與初始化 ---
+        const initializeAuth = async () => {
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Firebase Auth Error:", error);
+                showStatus('認證失敗，請檢查配置。', 'error');
+            }
+        };
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                userIdDisplay.textContent = userId; // 顯示完整的用戶 ID
+                console.log(`User authenticated with ID: ${userId}`);
+                
+                loadMonthVisibility(); // 載入月份隱藏狀態
+                await loadUserData(); // 加載用戶職稱和姓名, 包含特休天數
+                populateYearSelector(); // 填充年份選擇器
+                await loadAnnotations(currentYear); // 首次加載當前年份的數據
+                setupListeners(); // 設定監聽器
+                showStatus('認證完成，資料已同步。', 'success');
+            } else {
+                userId = crypto.randomUUID(); // 未登入時使用匿名 ID
+                userIdDisplay.textContent = '匿名-' + userId.substring(0, 8) + '...'; // 匿名 ID 顯示部分
+                console.log("Signed in anonymously or using fallback ID.");
+                
+                loadMonthVisibility(); // 載入月份隱藏狀態
+                showStatus('使用匿名帳號，資料將儲存在私人路徑。', 'success');
+                populateYearSelector(); // 填充年份選擇器
+                renderCalendar(currentYear); // 沒有用戶ID，但先繪製空日曆
+            }
+        });
+
+        // --- 年份選擇器 ---
+        const populateYearSelector = () => {
+            const startYear = new Date().getFullYear() - 3;
+            const endYear = new Date().getFullYear() + 5;
+            // 確定當前年份或預設年份
+            let defaultYear = currentYear;
+            if (currentYear < 2026) {
+                defaultYear = 2026; // 如果當前年份較舊，預設為 2026 年
+            }
+
+            // 清空選擇器並重新填充
+            yearSelector.innerHTML = ''; 
+
+            for (let year = startYear; year <= endYear; year++) {
+                const option = document.createElement('option');
+                option.value = year;
+                // 顯示中華民國年份（民國年 = 西元年 - 1911）
+                option.textContent = `${year} 年 (民國 ${year - 1911} 年)`;
+                if (year === defaultYear) {
+                    option.selected = true;
+                    currentYear = defaultYear; // 更新 currentYear
+                }
+                yearSelector.appendChild(option);
+            }
+        };
+
+        // --- 資料處理（時數註記） ---
+
+        const loadAnnotations = async (year) => {
+            if (!userId) {
+                annotations = {};
+                renderCalendar(year);
+                return;
+            }
+            showStatus(`正在載入 ${year} 年的紀錄...`);
+            try {
+                const docRef = getYearDocRef(year);
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    // 確保 data 是一個物件
+                    annotations = docSnap.data().data || {};
+                    showStatus(`${year} 年紀錄載入成功。`, 'success');
+                } else {
+                    annotations = {};
+                    showStatus(`未找到 ${year} 年的紀錄，已建立新空白頁。`, 'success');
+                }
+            } catch (e) {
+                console.error("Error loading annotations: ", e);
+                showStatus('載入紀錄時發生錯誤。', 'error');
+            }
+            renderCalendar(year);
+        };
+
+        /**
+         * 處理表格單元格的內容變更
+         * @param {HTMLElement} element - 失去焦點的 div 元素
+         * @param {number} month - 月份 (1-12)
+         * @param {number} day - 日期 (1-31)
+         */
+        window.handleNoteBlur = function(element, month, day) {
+            const value = element.textContent.trim();
+            saveAnnotation(month, day, value);
+        }
+
+        const saveAnnotation = async (month, day, value) => {
+            if (!userId) {
+                console.error("UserID not available. Cannot save.");
+                return;
+            }
+
+            const key = `${month}-${day}`;
+            // 時數輸入允許小數點和負號，但必須是數字格式
+            const trimmedValue = value; 
+            // 允許空字串或數字
+            const isValid = trimmedValue === '' || !isNaN(parseFloat(trimmedValue));
+
+            if (isValid) {
+                // 更新本地狀態
+                if (trimmedValue) {
+                    annotations[key] = trimmedValue; // 儲存為字串，保留用戶的格式（如一位小數）
+                } else {
+                    delete annotations[key];
+                }
+                
+                // 立即重新渲染日曆以更新小計和顯示
+                renderCalendar(currentYear);
+
+                showStatus('正在儲存紀錄...', 'loading');
+                try {
+                    const docRef = getYearDocRef(currentYear);
+                    await setDoc(docRef, { year: currentYear, data: annotations }, { merge: true });
+                    showStatus('紀錄儲存成功！', 'success');
+                } catch (e) {
+                    console.error("Error saving annotation: ", e);
+                    showStatus('儲存紀錄時發生錯誤。', 'error');
+                }
+            } else {
+                showStatus('請輸入有效的小時數（數字或空值）。', 'error');
+                // 由於 blur 事件已經發生，這裡我們不強制恢復舊值，用戶需要手動修正。
+            }
+        };
+
+        // --- 用戶資料（職稱/姓名/特休天數） ---
+        
+        /**
+         * 處理職別/姓名的 onfocus 事件，清除預設文字
+         */
+        window.clearDefaultText = function(element, field) {
+            const isJobTitle = field === 'jobTitle';
+            const defaultValue = isJobTitle ? DEFAULT_JOB_TITLE : DEFAULT_USER_NAME;
+            
+            // 僅當內容等於預設值時才清空
+            if (element.textContent.trim() === defaultValue) {
+                element.textContent = '';
+                // 移除淡化文字樣式
+                element.classList.remove('text-gray-400', 'italic');
+            }
+        };
+
+        const loadUserData = async () => {
+            if (!userId) return;
+            try {
+                const docRef = getUserDataDocRef();
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    // 合併舊數據，確保新欄位也有預設值
+                    const loadedData = docSnap.data();
+                    userData = { ...userData, ...loadedData };
+                }
+                updateUserInfoDisplay();
+            } catch (e) {
+                console.error("Error loading user data: ", e);
+            }
+        };
+
+        const saveUserData = async (field, value) => {
+            if (!userId) return;
+            
+            let finalValue = value.trim();
+
+            // 檢查特休天數是否為有效數字
+            if (field === 'annualLeaveDays') {
+                const numValue = parseFloat(finalValue) || 0;
+                if (isNaN(numValue) || numValue < 0) {
+                    showStatus('特休天數必須是有效的非負數字。', 'error');
+                    updateUserInfoDisplay(); 
+                    return; // 不儲存
+                }
+                userData[field] = numValue; // 儲存為數字
+            } else {
+                // 處理職別和姓名，如果為空，則設回預設提示文字
+                if (finalValue === '') {
+                    finalValue = (field === 'jobTitle' ? DEFAULT_JOB_TITLE : DEFAULT_USER_NAME);
+                }
+                userData[field] = finalValue;
+            }
+            
+            updateUserInfoDisplay();
+
+            try {
+                const docRef = getUserDataDocRef();
+                await setDoc(docRef, userData, { merge: true });
+                showStatus('用戶資料儲存成功！', 'success');
+            } catch (e) {
+                console.error("Error saving user data: ", e);
+                showStatus('用戶資料儲存失敗。', 'error');
+            }
+        };
+        
+        /**
+         * 處理特休天數輸入的 blur 事件
+         */
+        window.handleAnnualLeaveBlur = function(value) {
+            saveUserData('annualLeaveDays', value);
+        };
+        
+        /**
+         * 處理職別和姓名輸入的 blur 事件
+         */
+        window.handleUserDataBlur = function(element, field) {
+            const value = element.textContent.trim();
+            saveUserData(field, value);
+        }
+
+        const updateUserInfoDisplay = () => {
+            // 檢查是否應該顯示預設提示文字
+            const displayJobTitle = userData.jobTitle && userData.jobTitle !== DEFAULT_JOB_TITLE ? userData.jobTitle : DEFAULT_JOB_TITLE;
+            const displayUserName = userData.userName && userData.userName !== DEFAULT_USER_NAME ? userData.userName : DEFAULT_USER_NAME;
+
+            jobTitleSpan.textContent = displayJobTitle;
+            userNameSpan.textContent = displayUserName;
+            
+            // 特休天數計算與顯示
+            const days = userData.annualLeaveDays || 0;
+            const hours = (days * 8).toFixed(1);
+            
+            annualLeaveDaysSpan.textContent = days;
+            annualLeaveHoursSpan.textContent = hours;
+            
+            // 設定樣式：如果是預設文字，則使用淡化/斜體
+            if (displayJobTitle === DEFAULT_JOB_TITLE) {
+                jobTitleSpan.classList.add('text-gray-400', 'italic');
+            } else {
+                jobTitleSpan.classList.remove('text-gray-400', 'italic');
+            }
+            if (displayUserName === DEFAULT_USER_NAME) {
+                userNameSpan.classList.add('text-gray-400', 'italic');
+            } else {
+                userNameSpan.classList.remove('text-gray-400', 'italic');
+            }
+        };
+
+        // --- 日曆繪製邏輯 ---
+
+        const renderCalendar = (year) => {
+            printableYearDisplay.textContent = `${year} 年 (民國 ${year - 1911} 年)`;
+            calendarBody.innerHTML = '';
+            
+            // 確保 visibility 狀態已載入
+            loadMonthVisibility(); 
+
+            const monthNames = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
+            let yearTotalHours = 0;
+
+            monthNames.forEach((monthName, index) => {
+                const month = index + 1;
+                const daysInMonth = new Date(year, month, 0).getDate();
+                const daysBeforeFiller = 31 - daysInMonth; // 需要填充的格子數
+
+                // 檢查該月份是否被隱藏
+                const isHidden = monthVisibility[month] === 'hidden';
+                const hiddenClass = isHidden ? 'hidden-row' : '';
+                
+                // 小時記錄行（可編輯）
+                let hourRow = `<tr data-month="${month}" id="month-row-${month}" class="${hiddenClass} hover:bg-gray-50 transition-all duration-300">`;
+                
+                // === 1. 切換按鈕欄位 (修正 py-0.5) ===
+                const buttonIcon = isHidden 
+                    ? `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-red-500"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c2.97 0 6.17 1.76 8.51 5.38a2 2 0 0 1 0 2.84m-4.51-1.28A12.06 12.06 0 0 1 12 17c-2.97 0-6.17-1.76-8.51-5.38a2 2 0 0 1 0-2.84l2.52-3.8"></path><line x1="2" x2="22" y1="2" y2="22"></line></svg>` // Eye Off
+                    : `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-green-600"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>`; // Eye
+                
+                // 調整 py-0.5 以縮小行高
+                hourRow += `
+                    <td class="print-toggle-col px-1 py-0.5 text-center text-xs font-semibold text-gray-900 border-r border-gray-300 bg-gray-50">
+                        <button onclick="window.toggleMonthVisibility(${month})" 
+                                title="${isHidden ? '點擊顯示此月份' : '點擊隱藏此月份'}"
+                                class="p-1 rounded-full hover:bg-gray-200 transition duration-100">
+                            ${buttonIcon}
+                        </button>
+                    </td>
+                `;
+
+                // === 2. 月份/小時欄位 (修正 py-0.5) ===
+                hourRow += `<td class="py-0.5 pl-4 pr-3 text-sm font-semibold text-gray-900 border-r border-gray-300 whitespace-nowrap bg-blue-50">
+                                ${monthName} / 小時
+                            </td>`;
+
+                let monthlyTotal = 0; // 月份小時小計
+
+                // 3. 有效日期欄位 (時數)
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const key = `${month}-${day}`;
+                    const userHours = annotations[key] || '';
+                    
+                    // 計算總和
+                    const hourValue = parseFloat(userHours) || 0;
+                    monthlyTotal += hourValue;
+
+                    let bgClass = '';
+                    let titleText = ''; // 用於滑鼠懸停顯示假期名稱
+                    let displayValue = userHours; // 預設顯示用戶輸入的時數
+                    let textClass = 'text-gray-700'; // 預設深灰色文字
+
+                    const date = new Date(year, month - 1, day);
+                    const dayOfWeek = date.getDay(); // 0=Sun, 6=Sat
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                    
+                    // 檢查是否為 2026 年的法定假日/補假 (用於背景標註)
+                    const isHolidayOrCompensatory = (year === 2026 && holidays2026[key]);
+                    
+                    if (isHolidayOrCompensatory) {
+                        // 法定假日/補假優先使用淡綠色背景
+                        bgClass = 'bg-green-100';
+                        titleText = holidays2026[key]; // 完整名稱作為 title
+                    } else if (isWeekend) {
+                        // 週末使用藍/紅背景
+                        bgClass = dayOfWeek === 6 ? 'bg-blue-100' : 'bg-red-100'; // Sat: Blue, Sun: Red
+                        // 修正 1: 星期六、星期日 精簡為 六、日
+                        titleText = dayOfWeek === 6 ? '六' : '日';
+                    }
+
+                    // 實作淡化處理邏輯：如果沒有輸入時數，但當天是假日或週末，則顯示淡化文字的假期名稱
+                    if (userHours === '' && titleText) {
+                        displayValue = titleText; // 顯示假期名稱
+                        textClass = 'text-gray-400'; // 淡化文字顏色
+                    } else if (userHours === '') {
+                        displayValue = ''; 
+                    }
+                    
+
+                    // 備註欄位 - 允許編輯
+                    const contenteditableAttr = 'contenteditable="true"';
+                    const cursorClass = 'cursor-text';
+
+                    // 修正 py-0.5 以極致縮小行高
+                    hourRow += `
+                        <td class="px-1 py-0.5 text-center border-r border-gray-300 ${bgClass} ${cursorClass}">
+                            <div 
+                                class="editable-note text-xs w-full rounded focus:outline-none focus:ring-2 focus:ring-yellow-500 transition duration-100 ${textClass}"
+                                data-day="${day}"
+                                ${contenteditableAttr}
+                                onblur="window.handleNoteBlur(this, ${month}, ${day})"
+                                title="${titleText}"
+                            >${displayValue}</div>
+                        </td>
+                    `;
+                }
+
+                // 4. 無效日期合併欄位 (填充)
+                if (daysBeforeFiller > 0) {
+                    hourRow += `<td class="bg-gray-200 border-r border-gray-300" colspan="${daysBeforeFiller}"></td>`;
+                }
+
+                // 5. 小時小計欄位 (修正 py-0.5)
+                yearTotalHours += monthlyTotal;
+                hourRow += `<td class="px-3 py-0.5 text-right text-sm font-bold text-gray-800 whitespace-nowrap">
+                    ${monthlyTotal.toFixed(1)}
+                </td>`;
+                hourRow += `</tr>`;
+
+                // 僅添加小時行
+                calendarBody.innerHTML += hourRow;
+            });
+            
+            // 這裡可以選擇性地在底部添加年度總計行，但目前維持簡潔
+        };
+
+        // --- 事件監聽器 ---
+
+        const setupListeners = () => {
+            // 年份切換事件
+            yearSelector.addEventListener('change', async (e) => {
+                currentYear = parseInt(e.target.value);
+                await loadAnnotations(currentYear);
+            });
+        };
+
+        /**
+         * 轉換當前表格內容為 PDF 文件並下載 (A4 橫向)
+         */
+        window.downloadPDF = async function() {
+            showStatus('正在產生 PDF 文件，請稍候...', 'loading');
+            
+            // 1. 隱藏不必要的元素
+            const elementsToHide = document.querySelectorAll('.print\\:hidden, #status-message');
+            elementsToHide.forEach(el => el.style.display = 'none');
+
+            // 2. 準備捕捉的 DOM 元素 (捕捉整個內容區，包括標題)
+            const input = document.querySelector('.main-container');
+            
+            try {
+                // 3. 使用 html2canvas 捕捉 DOM 元素
+                const canvas = await html2canvas(input, { 
+                    scale: 3, // 提高解析度到 3 (更高品質)
+                    useCORS: true 
+                });
+
+                const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                const { jsPDF } = window.jspdf;
+                
+                // PDF 文件尺寸設定 (A4 橫向: 'l' - landscape, 'mm' - 單位, 'a4' - 尺寸)
+                const pdf = new jsPDF('l', 'mm', 'a4');
+                const pageHeight = pdf.internal.pageSize.getHeight(); // 210mm
+                const pageWidth = pdf.internal.pageSize.getWidth();   // 297mm
+                
+                const imgWidth = pageWidth - 10; // 留出 5mm 邊距
+                const imgHeight = canvas.height * imgWidth / canvas.width;
+                let heightLeft = imgHeight;
+                
+                let position = 5; // 圖像起始位置 5mm 邊距
+                
+                // 4. 處理多頁內容
+                pdf.addImage(imgData, 'JPEG', 5, position, imgWidth, imgHeight); // 從 5mm 處開始繪製
+                heightLeft -= pageHeight;
+                
+                // 由於是橫向，通常只需要一頁，但仍保留多頁邏輯以防內容過多
+                while (heightLeft >= -1) { 
+                    position = heightLeft - imgWidth + 5; // 調整位置以保持邊距
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'JPEG', 5, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+
+                // 5. 儲存文件
+                const userName = userData.userName.includes('編輯') ? '未命名' : userData.userName;
+                const fileName = `${currentYear}_${userName}_補休時數紀錄表.pdf`;
+                pdf.save(fileName);
+                
+                showStatus('PDF 檔案已成功下載（A4 橫向，行距已極致縮小），請檢查您的下載資料夾。', 'success');
+
+            } catch (error) {
+                console.error("PDF generation failed:", error);
+                showStatus('產生 PDF 檔案時發生錯誤。請嘗試重新整理頁面。', 'error');
+            } finally {
+                // 6. 恢復隱藏的元素
+                elementsToHide.forEach(el => el.style.display = '');
+            }
+        };
+
+        // 啟動應用
+        initializeAuth();
+    </script>
+
+</body>
+</html>
